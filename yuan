@@ -1,0 +1,81 @@
+def createWord(trainNum):
+    import re    
+    import jieba
+    stopWordPath = "D:\\chemail\\trec06c\\中文停用词表.txt"
+    with open(stopWordPath, 'rb') as fp:
+        stopword = fp.read().decode('utf-8')
+    stopWordList = stopword.splitlines()
+    index = open("D:\\chemail\\trec06c\\newindex")
+    wordList = [] 
+    labelList = []
+    addressList = []
+    for i in range(trainNum): 
+        line = index.readline()
+        if((line.split())[0] == "ham"): 
+            labelList.append(1)
+            address = 'D:\\chemail\\trec06c\\data\\'+line[12:15]+'\\'+line[16:19]
+            text = open(address,"r",encoding = "gb2312").read()
+        else:
+            labelList.append(0)
+            address = 'D:\\chemail\\trec06c\\data\\'+line[13:16]+'\\'+line[17:20]
+            voclist = open(address,"r",encoding = "gb2312").read()
+        voclist = ''.join(re.findall('[\u4e00-\u9fa5]',voclist))     
+        voclist = jieba.cut(voclist)
+        newtext = ''                                           
+        for word in voclist:
+            if word not in stopWordList and word != ' ':
+                newtext += word
+                newtext += " "
+        wordList.append(newtext)
+return wordList,labelList,stopWordList
+
+def naiveBayes(trainNum):
+    from sklearn.feature_extraction.text import CountVectorizer
+    import numpy as np
+    testbegin = int(0.7*trainNum)
+    wordList,labelList,stopWordList = createWord(trainNum)
+    train_ham = []
+    train_spam = []
+    test = wordList[testbegin:trainNum]
+    test_label = labelList[testbegin:trainNum]
+
+    for i in range(0,testbegin):
+        if(labelList[i] == 1):
+            train_ham.append(wordList[i])
+        else:
+            train_spam.append(wordList[i])
+    frematrix = CountVectorizer()
+    freTrain  = frematrix.fit_transform(wordList[0:testbegin]).toarray()
+    trainVoc  = frematrix.vocabulary_
+
+    frematrix2 = CountVectorizer(stop_words = stopWordList,vocabulary = trainVoc)
+    freHam = (frematrix2.fit_transform(train_ham)).toarray()
+    freSpam = (frematrix2.fit_transform(train_spam)).toarray()
+    freTest = (frematrix2.fit_transform(test)).toarray()
+    
+    hamProb = np.sum(freHam,axis=0)
+    totalHam= np.sum(hamProb) #正常邮件数量
+    hamProb[hamProb==0] = 0.01 #将未出现的语句的概率设为0.01
+    hamProb = hamProb/totalHam
+
+    spamProb = np.sum(freSpam,axis=0)
+    totalSpam= np.sum(spamProb) #垃圾邮件数量
+    spamProb[spamProb==0] = 0.01 #将未出现的语句的概率设为0.01
+    spamProb = spamProb/totalSpam
+
+    accuracy = []
+    ph = (np.shape(freHam)[0])/(np.shape(freTrain)[0])            #初始认为正常邮件概率(正常邮件数/总邮件数)
+    ps = 1-ph            #初始认为垃圾邮件概率
+    for i in range(trainNum-testbegin):
+        ph1 = (hamProb ** freTest[i]).prod()
+        ps1 = (spamProb ** freTest[i]).prod()
+        finalProb = ps * ps1/(ps*ps1+ph*ph1)
+        if finalProb>0.5:
+            predict = 0
+        else:
+            predict = 1
+        if predict == test_label[i]:
+            accuracy.append(1)
+        else:
+            accuracy.append(0)
+    print("accurate is %5.3f for %d emails" % (np.mean(accuracy),trainNum))
